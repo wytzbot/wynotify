@@ -1,0 +1,19 @@
+# WyNotify
+
+WyNotify is a simple customer notification platform for businesses, website owners and app owners.
+
+## What it does
+- Collects opted-in notification subscribers.
+- Sends customer updates, promotions, announcements and alerts.
+- Provides subscriber counts and delivery results.
+- Supports website and app integrations through developer SDK/API tools.
+- Keeps the everyday experience focused on business owners rather than infrastructure.
+
+## Main workflow
+Connect a website or app -> collect subscribers -> send notifications -> review delivery results.
+
+## Developer resources
+The dashboard includes registration credentials, SDK examples, API endpoints and integration guidance under Advanced tools.
+
+## Important
+WyNotify should only be used to send notifications to users who have voluntarily granted notification permission or otherwise legitimately opted in.
