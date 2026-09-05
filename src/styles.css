@@ -60,3 +60,23 @@ button,input,textarea,select{font-size:15px}
 .bottom small{font-size:11px}
 @media(max-width:900px){.hero h1,.page h1{font-size:31px}.stat strong{font-size:23px}.panel{padding:16px}}
 @media(max-width:700px){.welcome h1{font-size:29px}.page p,.lead{font-size:15px}.setupStep b{font-size:14px}}
+
+
+/* WyNotify 4.8 readability layer: larger, touch-friendly type across the dashboard. */
+body{font-size:16px;line-height:1.55}
+button,input,textarea,select{font-size:15px}
+.navItem{font-size:14px;padding:11px 10px}
+.groupTitle,.navLabel{font-size:11px}
+.search input{font-size:14px}
+.workspace small{font-size:12px}
+.brand{font-size:21px}
+.content p,.content li{font-size:16px;line-height:1.6}
+.content .lead{font-size:18px;line-height:1.6}
+.content h1{font-size:32px;line-height:1.18}
+.content h2{font-size:22px;line-height:1.25}
+.content h3{font-size:18px}
+.card,.panel,.connectCard,.plan,.templateCard{font-size:15px}
+small{font-size:13px}
+.badge,.eyebrow{font-size:12px}
+code,pre{font-size:14px;line-height:1.55}
+@media(max-width:800px){body{font-size:16px}.content h1{font-size:28px}.content h2{font-size:21px}.content p,.content li{font-size:16px}.navItem{font-size:15px}.search input{font-size:15px}button,input,textarea,select{font-size:16px}}

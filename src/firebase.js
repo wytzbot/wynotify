@@ -53,7 +53,8 @@ export async function getPushToken() {
   if (!("Notification" in window)) throw new Error("This browser does not support notifications.");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notification permission was not granted.");
-  const registration = await navigator.serviceWorker.getRegistration("/push-service-worker.js") || await navigator.serviceWorker.register("/push-service-worker.js");
+  const swUrl = "/push-service-worker.js?v=4.8.0";
+  const registration = await navigator.serviceWorker.getRegistration(swUrl) || await navigator.serviceWorker.register(swUrl);
   const token = await getToken(getMessaging(app), { vapidKey: vapid, serviceWorkerRegistration: registration });
   if (!token) throw new Error("The push service did not return a registration token.");
   return token;
