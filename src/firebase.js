@@ -1,7 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAnalytics, isSupported } from "firebase/analytics";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
 import { getMessaging, isSupported as messagingSupported, getToken, onMessage } from "firebase/messaging";
 
 const required = {
@@ -18,15 +16,8 @@ if (missing.length) {
   throw new Error(`Push service configuration is incomplete. Missing: ${missing.join(", ")}`);
 }
 
-const firebaseConfig = {
-  ...required,
-  ...(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ? { measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID } : {}),
-};
-
-export const app = initializeApp(firebaseConfig);
+export const app = initializeApp(required);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const analyticsPromise = isSupported().then((ok) => (ok ? getAnalytics(app) : null)).catch(() => null);
 export const authReady = signInAnonymously(auth).catch((e) => {
   console.error("Anonymous account session failed", e);
   throw e;

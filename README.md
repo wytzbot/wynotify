@@ -24,16 +24,16 @@ Developers still get SDK/API integration tools under **Advanced tools**.
 - The `send` action used to cap delivery at the first 500 matched subscribers and silently drop the rest — meaning Pro (25,000) and Business (100,000) plans never actually reached their full audience on a single broadcast. Sends are now batched in groups of 500 (Firebase Cloud Messaging's hard limit per call) so every matched subscriber is reached.
 - Pricing was re-checked against current USD→NGN market rates: Starter is now ₦4,500 (~$3), Pro ₦7,500 (~$5), Business ₦15,000 (~$10).
 
-**New features (to compete with Firebase directly)**
+**New business-focused features**
 
-- **Click-through tracking** (free, all plans) — every notification now records how many customers actually tapped it, shown next to sent/failed counts. Firebase Cloud Messaging alone gives you delivery counts but no click analytics without extra SDK work; this comes built in.
+- **Click-through tracking** (free, all plans) — every notification now records how many customers actually tapped it, shown next to sent/failed counts. Click analytics are built into WyNotify so owners can see engagement without building a separate tracking system.
 - **Scheduled sending** (Pro and Business) — compose a message and pick a future date/time instead of sending immediately. A Vercel Cron job (`/api?action=processScheduled`, every 5 minutes) flushes due messages. Requires a new `CRON_SECRET` environment variable (see below) — Vercel sends it automatically as a bearer token once you set it.
 
 ### New/updated environment variable
 
 - `CRON_SECRET` — a random string (16+ chars). Set it in Vercel's env vars; Vercel automatically sends it as `Authorization: Bearer $CRON_SECRET` when it invokes the cron job, and the API checks it against that header. Without it the cron endpoint still works but is unauthenticated — set it before going live.
 
-### Ideas for further differentiation from Firebase (not yet built)
+### Ideas for future product improvements
 
 - A/B testing two message variants against a split audience
 - Recurring/automated sends (e.g. a weekly digest) rather than one-off scheduling
@@ -61,7 +61,6 @@ Set these in **Vercel → Project → Settings → Environment Variables**.
 - `VITE_FIREBASE_STORAGE_BUCKET`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_APP_ID`
-- `VITE_FIREBASE_MEASUREMENT_ID` — optional
 - `VITE_FIREBASE_VAPID_KEY`
 - `VITE_SUPPORT_EMAIL` — optional
 
@@ -95,3 +94,25 @@ npm run build
 ```
 
 The build generates the push service worker from the configured public web variables.
+
+
+## Easy website subscriber button
+
+WyNotify includes a drop-in website integration for businesses that want visitors to subscribe without building their own notification UI. From **Subscribers**, copy the generated script and download `wynotify-push-sw.js`. The developer places the worker at the website root and pastes the script where the button should appear.
+
+Example:
+
+```html
+<script src="https://YOUR-WYNOTIFY-DOMAIN.com/wynotify-register.js" data-workspace-key="YOUR_PUBLIC_KEY" data-api="https://YOUR-WYNOTIFY-DOMAIN.com/api" data-label="Get updates" async></script>
+```
+
+The integration requests notification permission, creates the browser subscription, and registers it to the business workspace. It requires HTTPS (or localhost for development). For custom Android/iOS apps, use the SDK/API integration instead.
+
+Optional `<head>` configuration is also supported:
+
+```html
+<meta name="wynotify-workspace-key" content="YOUR_PUBLIC_KEY">
+<meta name="wynotify-api" content="https://YOUR-WYNOTIFY-DOMAIN.com/api">
+```
+
+The public configuration endpoint returns only browser-side notification configuration. It never returns Admin SDK credentials, payment secrets, or private workspace data.

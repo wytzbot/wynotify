@@ -17,3 +17,46 @@ label input[type="file"]{display:block;margin-top:8px}
 /* Simple-owner experience */
 .navLabel{font-size:9px;font-weight:850;letter-spacing:.12em;color:var(--muted);padding:12px 10px 6px}.advancedToggle{width:100%;display:flex;align-items:center;gap:9px;border:0;background:none;color:var(--muted);padding:10px;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;text-align:left}.advancedToggle svg:last-child{margin-left:auto;transition:.15s}.advancedToggle:hover{background:var(--panel2);color:var(--text)}.advancedNav{padding-left:8px;border-left:1px solid var(--border);margin-left:8px}.signout{margin-top:auto}.welcome{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:16px}.welcome h1{font-size:32px;margin:5px 0 7px;letter-spacing:-.03em}.welcome p{max-width:680px}.lead{max-width:760px}.starter{padding:18px;margin-bottom:15px}.starterText{display:flex;gap:12px;align-items:flex-start}.starterText>div{flex:1}.starterText b{font-size:14px}.starterText p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.55}.starterIcon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:rgba(104,119,255,.13);color:var(--accent2)}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}.setupStep{display:flex;align-items:center;gap:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:10px;text-align:left;cursor:pointer}.setupStep>span{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--border);font-size:10px;font-weight:800}.setupStep b{font-size:10px;flex:1}.setupStep>svg{color:var(--muted)}.setupStep.complete{border-color:rgba(50,213,131,.3)}.setupStep.complete>span{background:var(--good);border-color:var(--good);color:#07170f}.simpleQuick{grid-template-columns:1fr}.simpleQuick button{min-height:54px}.simpleQuick button div{flex:1}.simpleQuick button b,.simpleQuick button small{display:block}.simpleQuick button small{color:var(--muted);font-size:9px;margin-top:2px}.trust{display:flex;gap:12px;align-items:flex-start}.trust>svg{color:var(--good);flex:none}.trust p{margin:4px 0 0}.connectCards{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:20px}.connectCard{display:flex;gap:13px;padding:18px;border:1px solid var(--border);border-radius:15px;background:var(--panel)}.featuredCard{border-color:rgba(104,119,255,.4)}.bigIcon{width:42px;height:42px;border-radius:12px;background:var(--panel2);display:grid;place-items:center;color:var(--accent2);flex:none}.connectCard h2{font-size:15px;margin:1px 0 5px}.connectCard p{font-size:11px;color:var(--muted);line-height:1.5;margin:0 0 12px}.subscriberHero{display:flex;align-items:center;justify-content:space-between;gap:30px}.subscriberHero>div:first-child{display:flex;align-items:baseline;gap:9px}.bigNumber{font-size:34px;font-weight:850}.subscriberHero>div:last-child{width:min(330px,50%)}.subscriberHero small{display:block;color:var(--muted);font-size:10px;margin-bottom:7px}.capacityBar{height:7px;background:var(--panel2);border-radius:20px;overflow:hidden}.capacityBar span{display:block;height:100%;background:var(--accent2);border-radius:inherit}.developerBox{margin-top:15px}.developerBox h2{font-size:18px;margin:4px 0}.developerBox h3{font-size:13px;margin:20px 0 7px}.developerBox label{display:block;font-size:10px;font-weight:750;margin-top:14px}.developerBox input{display:block;width:100%;margin-top:6px;padding:11px;border:1px solid var(--border);border-radius:9px;background:var(--panel2);color:var(--text);font-size:11px}.buttonRow{display:flex;gap:8px;flex-wrap:wrap}.billingTop>div:first-child{display:flex;align-items:flex-start;gap:8px}.billingTop>div:first-child small{margin:3px 0 0;display:block}.modal{backdrop-filter:blur(4px)}
 @media(max-width:700px){.welcome{display:block}.welcome h1{font-size:27px}.welcome .primary{margin-top:12px}.steps{grid-template-columns:1fr}.connectCards{grid-template-columns:1fr}.subscriberHero{display:block}.subscriberHero>div:last-child{width:100%;margin-top:14px}.developerBox{padding:13px}.buttonRow .secondary{flex:1}.simpleStats{grid-template-columns:1fr 1fr}.navLabel{padding-top:9px}}
+
+
+/* Accessibility/readability pass: larger default UI typography. */
+body{font-size:15px;line-height:1.5}
+button,input,textarea,select{font-size:15px}
+.navItem{font-size:14px}
+.navLabel{font-size:11px}
+.advancedToggle{font-size:14px}
+.search input{font-size:14px}
+.eyebrow{font-size:12px}
+.page p,.lead{font-size:15px;line-height:1.6}
+.stat span{font-size:12px}
+.stat strong{font-size:24px}
+.cardTitle{font-size:17px}
+.small,.smallText{font-size:13px}
+.notice{font-size:14px;line-height:1.55}
+.starterText b{font-size:16px}
+.starterText p{font-size:14px}
+.setupStep b{font-size:13px}
+.setupStep>span{font-size:12px}
+.simpleQuick button small{font-size:12px}
+.connectCard h2{font-size:18px}
+.connectCard p{font-size:14px;line-height:1.6}
+.subscriberHero small{font-size:12px}
+.developerBox h3{font-size:15px}
+.developerBox label{font-size:13px}
+.developerBox input{font-size:14px}
+.plan>p{font-size:13px}
+.plan>div span{font-size:13px}
+.popular{font-size:10px}
+.plan>em{font-size:11px}
+.plan>strong small{font-size:12px}
+.composer label{font-size:14px}
+.preview>small{font-size:10px}
+.preview b,.preview p{font-size:13px}
+.toast{font-size:14px}
+.empty p{font-size:14px}
+.setting small{font-size:13px}
+.pageTitle p{font-size:14px}
+.codeBlock{font-size:13px;line-height:1.6}
+.bottom small{font-size:11px}
+@media(max-width:900px){.hero h1,.page h1{font-size:31px}.stat strong{font-size:23px}.panel{padding:16px}}
+@media(max-width:700px){.welcome h1{font-size:29px}.page p,.lead{font-size:15px}.setupStep b{font-size:14px}}

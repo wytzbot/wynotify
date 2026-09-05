@@ -106,6 +106,14 @@ function subscriptionInfo(data) {
   return { plan: active ? String(sub.plan || "free") : "free", active, expiresAt: active ? expiry.toISOString() : null };
 }
 
+async function findWorkspaceByPublicKey(publicKey) {
+  if (!publicKey) return null;
+  const snap = await db().collection("users").where("workspace.publicKey", "==", publicKey).limit(1).get();
+  if (snap.empty) return null;
+  const d = snap.docs[0].data();
+  return d.workspace || null;
+}
+
 async function upsertSubscription(uid, plan, reference, charge) {
   if (!PLANS[plan] || plan === "free") throw new Error("Invalid paid plan.");
   const userRef = db().collection("users").doc(uid);
@@ -183,13 +191,33 @@ async function deliverToDevices({ deliverable, title, message, url, notification
 export default async function handler(req, res) {
   try {
     const action = req.query?.action || (req.method !== "GET" ? (await bodyOf(req)).action : undefined);
-    if (req.method === "OPTIONS") { setCors(res, action === "registerDevice" || action === "trackClick"); res.status(204).end(); return; }
+    if (req.method === "OPTIONS") { setCors(res, action === "registerDevice" || action === "trackClick" || action === "publicConfig"); res.status(204).end(); return; }
     if (req.method === "GET" && action === "health") return json(res, 200, { ok: true, service: "WyNotify API", version: 4, flutterwaveV4: true });
+
+    // Public, non-secret configuration used by the drop-in website subscriber widget.
+    // It contains only client-side notification configuration; no Admin/Flutterwave secrets.
+    if (req.method === "GET" && action === "publicConfig") {
+      const workspaceKey = String(req.query?.workspaceKey || "").trim();
+      const workspace = await findWorkspaceByPublicKey(workspaceKey);
+      if (!workspace) return json(res, 404, { error: "Invalid workspace key." });
+      const required = {
+        apiKey: process.env.VITE_FIREBASE_API_KEY,
+        authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: process.env.VITE_FIREBASE_APP_ID,
+        vapidKey: process.env.VITE_FIREBASE_VAPID_KEY,
+      };
+      const missing = Object.entries(required).filter(([,v]) => !v).map(([k]) => k);
+      if (missing.length) return json(res, 500, { error: `Public notification setup is incomplete. Missing: ${missing.join(", ")}` });
+      return json(res, 200, { ok: true, workspaceKey, firebase: { apiKey: required.apiKey, authDomain: required.authDomain, projectId: required.projectId, storageBucket: required.storageBucket, messagingSenderId: required.messagingSenderId, appId: required.appId }, vapidKey: required.vapidKey });
+    }
 
     if (req.method === "POST" && action === "registerDevice") {
       setCors(res, true);
       const b = await bodyOf(req);
-      if (!b.token || typeof b.token !== "string" || b.token.length < 20) return json(res, 400, { error: "A valid FCM token is required." });
+      if (!b.token || typeof b.token !== "string" || b.token.length < 20) return json(res, 400, { error: "A valid push registration token is required." });
       let workspaceId = "";
       let ownerUid = null;
       if (req.headers.authorization) {
@@ -343,7 +371,16 @@ export default async function handler(req, res) {
       const eventRef = db().collection("webhookEvents").doc(eventId); const existingEvent = await eventRef.get();
       if (existingEvent.exists && existingEvent.data()?.processed === true) return json(res, 200, { received: true, eventId, duplicate: true });
       const chargeId = payload?.data?.id || payload?.data?.charge_id; let charge = null;
-      if (chargeId) { try { const r = await flw(`/charges/${encodeURIComponent(chargeId)}`, { method: "GET" }); charge = r?.data || null; } catch (e) { console.error("webhook charge verification", e.message); } }
+      if (chargeId) {
+        try { const r = await flw(`/charges/${encodeURIComponent(chargeId)}`, { method: "GET" }); charge = r?.data || null; }
+        catch (e) {
+          console.error("webhook charge verification", e.message);
+          // Do NOT mark this event processed: if verification failed transiently, leaving it
+          // unprocessed lets Flutterwave's retry succeed later. Marking it processed here would
+          // make that retry look like a duplicate and silently drop the event forever.
+          return json(res, 502, { error: "Could not verify charge with Flutterwave; will retry." });
+        }
+      }
       if (charge?.reference) { const ps = await db().collection("payments").doc(charge.reference).get(); if (ps.exists) { const p = ps.data(); if (p.uid && charge.status === "succeeded" && Number(charge.amount) === Number(p.amount) && String(charge.currency) === String(p.currency)) await upsertSubscription(p.uid, p.plan, charge.reference, charge); else await db().collection("payments").doc(charge.reference).set({ status: charge.status || "pending", lastWebhookEvent: eventId, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }); } }
       await eventRef.set({ eventId, type: payload?.type || null, processed: true, receivedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
       return json(res, 200, { received: true, eventId, type: payload?.type || null });
