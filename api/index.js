@@ -12,7 +12,16 @@ const PLANS = {
   pro: { subscribers: 25000, analyticsDays: 90 },
   business: { subscribers: 100000, analyticsDays: 365 }
 };
-const PLAN_PRICES = { starter: 5000, pro: 12000, business: 25000 };
+// Priced in NGN, kept in step with the USD reference shown on the pricing page.
+// starter: ~$3, pro: ~$5, business: ~$10 at current market rates.
+const PLAN_PRICES = { starter: 4500, pro: 7500, business: 15000 };
+const PLAN_FEATURES = {
+  free: { scheduling: false, clickTracking: true },
+  starter: { scheduling: false, clickTracking: true },
+  pro: { scheduling: true, clickTracking: true },
+  business: { scheduling: true, clickTracking: true }
+};
+const MAX_FCM_BATCH = 500; // FCM hard limit per multicast call
 
 function getAdmin() {
   if (admin.apps.length) return admin.app();
@@ -136,24 +145,45 @@ async function activeDevices(workspaceId) {
   const snap = await db().collection("devices").where("workspaceId", "==", workspaceId).get();
   return snap.docs.filter(x => x.data().active !== false).map(x => ({ id: x.id, ...x.data() }));
 }
-async function rateLimitPublicRegistration(workspaceId, req) {
+async function rateLimit(bucket, req, max = 30) {
   const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "unknown").split(",")[0].trim();
   const minute = Math.floor(Date.now() / 60000);
-  const key = crypto.createHash("sha256").update(`${workspaceId}:${ip}:${minute}`).digest("hex");
+  const key = crypto.createHash("sha256").update(`${bucket}:${ip}:${minute}`).digest("hex");
   const ref = db().collection("rateLimits").doc(key);
   const result = await db().runTransaction(async t => {
     const snap = await t.get(ref); const count = snap.exists ? Number(snap.data().count || 0) : 0;
-    if (count >= 30) return false;
-    t.set(ref, { count: count + 1, workspaceId, minute, createdAt: snap.exists ? snap.data().createdAt : admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    if (count >= max) return false;
+    t.set(ref, { count: count + 1, bucket, minute, createdAt: snap.exists ? snap.data().createdAt : admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     return true;
   });
   return result;
+}
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+// Sends to every token, batching in groups of MAX_FCM_BATCH — FCM rejects a
+// multicast call with more than 500 tokens, so anything beyond the first
+// batch used to be silently dropped for Pro/Business-size audiences.
+async function deliverToDevices({ deliverable, title, message, url, notificationId }) {
+  const tokens = deliverable.map(d => d.token);
+  let successCount = 0, failureCount = 0;
+  const invalid = [];
+  for (const batch of chunkArray(deliverable, MAX_FCM_BATCH)) {
+    const batchTokens = batch.map(d => d.token);
+    const result = await getAdmin().messaging().sendEachForMulticast({ tokens: batchTokens, notification: { title, body: message }, data: { url: String(url || "/"), notificationId } });
+    successCount += result.successCount;
+    failureCount += result.failureCount;
+    result.responses.forEach((r, i) => { if (!r.success && ["messaging/registration-token-not-registered", "messaging/invalid-registration-token"].includes(r.error?.code)) invalid.push(batch[i].id); });
+  }
+  return { tokens, successCount, failureCount, invalid };
 }
 
 export default async function handler(req, res) {
   try {
     const action = req.query?.action || (req.method !== "GET" ? (await bodyOf(req)).action : undefined);
-    if (req.method === "OPTIONS") { setCors(res, action === "registerDevice"); res.status(204).end(); return; }
+    if (req.method === "OPTIONS") { setCors(res, action === "registerDevice" || action === "trackClick"); res.status(204).end(); return; }
     if (req.method === "GET" && action === "health") return json(res, 200, { ok: true, service: "WyNotify API", version: 4, flutterwaveV4: true });
 
     if (req.method === "POST" && action === "registerDevice") {
@@ -174,7 +204,7 @@ export default async function handler(req, res) {
         ownerUid = found.uid;
       }
       if (!workspaceId) return json(res, 400, { error: "workspaceKey or authenticated workspace is required." });
-      if (!req.headers.authorization && !(await rateLimitPublicRegistration(workspaceId, req))) return json(res, 429, { error: "Too many registration attempts. Please try again in a minute." });
+      if (!req.headers.authorization && !(await rateLimit(`register:${workspaceId}`, req, 30))) return json(res, 429, { error: "Too many registration attempts. Please try again in a minute." });
       const owner = await db().collection("users").where("workspace.id", "==", workspaceId).limit(1).get();
       const ownerDoc = owner.empty ? null : owner.docs[0];
       if (!ownerDoc || (ownerUid && ownerDoc.id !== ownerUid)) return json(res, 404, { error: "Workspace not found." });
@@ -222,25 +252,85 @@ export default async function handler(req, res) {
       if (!title || !message) return json(res, 400, { error: "Title and message are required." });
       if (title.length > 120 || message.length > 1000) return json(res, 400, { error: "Title must be 120 characters or less and message 1,000 characters or less." });
       const { workspace, user: userData } = await workspaceForUser(user.uid); const sub = subscriptionInfo(userData); const limit = PLANS[sub.plan]?.subscribers || 1000;
-      const devices = await activeDevices(workspace.id); let matches = devices;
-      const audience = String(b.audience || "all"); if (audience !== "all") matches = matches.filter(d => d.subscriberType === audience || d.tags?.includes(audience));
+      const audience = String(b.audience || "all");
+      const devices = await activeDevices(workspace.id);
       if (devices.length > limit) return json(res, 409, { error: `Your workspace exceeds the ${sub.plan} subscriber limit. Upgrade your plan or remove inactive subscribers.` });
-      const deliverable = matches.filter(d => typeof d.token === "string" && d.token).slice(0, 500);
-      const tokens = deliverable.map(d => d.token);
-      if (!tokens.length) return json(res, 400, { error: "No active subscribers match this audience. Register a customer device first." });
+
+      if (b.scheduledFor) {
+        const features = PLAN_FEATURES[sub.plan] || PLAN_FEATURES.free;
+        if (!features.scheduling) return json(res, 402, { error: "Scheduled sending is a Pro and Business feature. Upgrade your plan to schedule messages ahead of time." });
+        const sendAt = new Date(b.scheduledFor);
+        if (isNaN(sendAt.getTime()) || sendAt.getTime() <= Date.now()) return json(res, 400, { error: "Choose a valid date and time in the future." });
+        const scheduleId = id("schedule");
+        await db().collection("scheduledNotifications").doc(scheduleId).set({ uid: user.uid, workspaceId: workspace.id, title, message, audience, url: String(b.url || "/"), sendAt: admin.firestore.Timestamp.fromDate(sendAt), status: "pending", createdAt: admin.firestore.FieldValue.serverTimestamp() });
+        return json(res, 200, { ok: true, scheduled: true, scheduleId, sendAt: sendAt.toISOString() });
+      }
+
+      let matches = devices;
+      if (audience !== "all") matches = matches.filter(d => d.subscriberType === audience || d.tags?.includes(audience));
+      const deliverable = matches.filter(d => typeof d.token === "string" && d.token);
+      if (!deliverable.length) return json(res, 400, { error: "No active subscribers match this audience. Register a customer device first." });
       const notificationId = id("notification");
-      const result = await getAdmin().messaging().sendEachForMulticast({ tokens, notification: { title, body: message }, data: { url: String(b.url || "/"), notificationId } });
-      await db().collection("notifications").doc(notificationId).set({ uid: user.uid, workspaceId: workspace.id, title, message, audience, count: tokens.length, successCount: result.successCount, failureCount: result.failureCount, status: result.successCount ? "sent" : "failed", createdAt: admin.firestore.FieldValue.serverTimestamp() });
-      const invalid = []; result.responses.forEach((r, i) => { if (!r.success && ["messaging/registration-token-not-registered", "messaging/invalid-registration-token"].includes(r.error?.code)) invalid.push(deliverable[i].id); });
+      const { tokens, successCount, failureCount, invalid } = await deliverToDevices({ deliverable, title, message, url: b.url, notificationId });
+      await db().collection("notifications").doc(notificationId).set({ uid: user.uid, workspaceId: workspace.id, title, message, audience, count: tokens.length, successCount, failureCount, clicks: 0, status: successCount ? "sent" : "failed", createdAt: admin.firestore.FieldValue.serverTimestamp() });
       if (invalid.length) await Promise.all(invalid.map(x => db().collection("devices").doc(x).set({ active: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })));
-      return json(res, 200, { ok: true, notificationId, matched: tokens.length, sent: result.successCount, failed: result.failureCount });
+      return json(res, 200, { ok: true, notificationId, matched: tokens.length, sent: successCount, failed: failureCount });
+    }
+
+    if ((req.method === "GET" || req.method === "POST") && action === "processScheduled") {
+      const secret = process.env.CRON_SECRET;
+      const authHeader = String(req.headers.authorization || "");
+      if (secret && authHeader !== `Bearer ${secret}`) return json(res, 401, { error: "Unauthorized cron invocation." });
+      const now = admin.firestore.Timestamp.now();
+      const due = await db().collection("scheduledNotifications").where("status", "==", "pending").where("sendAt", "<=", now).limit(20).get();
+      let processed = 0;
+      for (const doc of due.docs) {
+        const s = doc.data();
+        try {
+          const devices = await activeDevices(s.workspaceId);
+          let matches = devices;
+          if (s.audience !== "all") matches = matches.filter(d => d.subscriberType === s.audience || d.tags?.includes(s.audience));
+          const deliverable = matches.filter(d => typeof d.token === "string" && d.token);
+          const notificationId = id("notification");
+          if (deliverable.length) {
+            const { tokens, successCount, failureCount, invalid } = await deliverToDevices({ deliverable, title: s.title, message: s.message, url: s.url, notificationId });
+            await db().collection("notifications").doc(notificationId).set({ uid: s.uid, workspaceId: s.workspaceId, title: s.title, message: s.message, audience: s.audience, count: tokens.length, successCount, failureCount, clicks: 0, status: successCount ? "sent" : "failed", scheduled: true, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+            if (invalid.length) await Promise.all(invalid.map(x => db().collection("devices").doc(x).set({ active: false, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })));
+            await doc.ref.set({ status: "sent", notificationId, processedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          } else {
+            await doc.ref.set({ status: "sent", notificationId: null, note: "No matching subscribers at send time.", processedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          }
+        } catch (e) {
+          await doc.ref.set({ status: "failed", error: e.message, processedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        }
+        processed++;
+      }
+      return json(res, 200, { ok: true, processed });
+    }
+
+    if (req.method === "POST" && action === "trackClick") {
+      setCors(res, true);
+      const b = await bodyOf(req); const notificationId = String(b.id || "");
+      if (!notificationId) return json(res, 400, { error: "Notification id is required." });
+      if (!(await rateLimit(`click:${notificationId}`, req, 60))) return json(res, 429, { error: "Too many click events." });
+      const ref = db().collection("notifications").doc(notificationId);
+      const snap = await ref.get();
+      if (!snap.exists) return json(res, 404, { error: "Notification not found." });
+      await ref.set({ clicks: admin.firestore.FieldValue.increment(1), lastClickedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      return json(res, 200, { ok: true });
     }
 
     if (req.method === "GET" && action === "dashboard") {
-      const user = await requireUser(req); const { workspace, user: userData } = await workspaceForUser(user.uid); const [n, d] = await Promise.all([db().collection("notifications").where("workspaceId", "==", workspace.id).orderBy("createdAt", "desc").limit(100).get(), db().collection("devices").where("workspaceId", "==", workspace.id).get()]);
+      const user = await requireUser(req); const { workspace, user: userData } = await workspaceForUser(user.uid);
+      const [n, d, s] = await Promise.all([
+        db().collection("notifications").where("workspaceId", "==", workspace.id).orderBy("createdAt", "desc").limit(100).get(),
+        db().collection("devices").where("workspaceId", "==", workspace.id).get(),
+        db().collection("scheduledNotifications").where("workspaceId", "==", workspace.id).where("status", "==", "pending").orderBy("sendAt", "asc").limit(20).get()
+      ]);
       const active = d.docs.filter(x => x.data().active !== false); const sub = subscriptionInfo(userData);
       const recent = n.docs.map(x => ({ id: x.id, ...x.data(), createdAt: x.data().createdAt?.toDate?.()?.toISOString() || null })).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-      return json(res, 200, { ok: true, workspace, subscription: { ...userData?.subscription, plan: sub.plan, active: sub.active, expiresAt: sub.expiresAt }, subscribers: active.length, notifications: n.size, recent, registration: { workspaceKey: workspace.publicKey, endpoint: "/api?action=registerDevice" } });
+      const scheduled = s.docs.map(x => ({ id: x.id, ...x.data(), sendAt: x.data().sendAt?.toDate?.()?.toISOString() || null }));
+      return json(res, 200, { ok: true, workspace, subscription: { ...userData?.subscription, plan: sub.plan, active: sub.active, expiresAt: sub.expiresAt, capabilities: PLAN_FEATURES[sub.plan] || PLAN_FEATURES.free }, subscribers: active.length, notifications: n.size, recent, scheduled, registration: { workspaceKey: workspace.publicKey, endpoint: "/api?action=registerDevice" } });
     }
 
     if (req.method === "POST" && action === "webhook") {

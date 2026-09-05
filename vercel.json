@@ -1,10 +1,15 @@
 {
+  "crons":[
+    {"path":"/api?action=processScheduled","schedule":"*/5 * * * *"}
+  ],
   "rewrites":[
     {"source":"/api/:path*","destination":"/api/index.js"},
     {"source":"/(.*)","destination":"/"}
   ],
   "headers":[
-    {"source":"/firebase-messaging-sw.js","headers":[{"key":"Cache-Control","value":"no-store"}]},
-    {"source":"/sw.js","headers":[{"key":"Cache-Control","value":"no-store"}]}
+    {"source":"/push-service-worker.js","headers":[{"key":"Cache-Control","value":"no-store"},{"key":"Content-Type","value":"application/javascript; charset=utf-8"}]},
+    {"source":"/robots.txt","headers":[{"key":"Cache-Control","value":"public, max-age=3600"}]},
+    {"source":"/sitemap.xml","headers":[{"key":"Cache-Control","value":"public, max-age=3600"}]},
+    {"source":"/llms.txt","headers":[{"key":"Cache-Control","value":"public, max-age=3600"}]}
   ]
 }

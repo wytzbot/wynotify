@@ -15,7 +15,7 @@ const required = {
 
 const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);
 if (missing.length) {
-  throw new Error(`Firebase client configuration is incomplete. Missing: ${missing.join(", ")}`);
+  throw new Error(`Push service configuration is incomplete. Missing: ${missing.join(", ")}`);
 }
 
 const firebaseConfig = {
@@ -28,7 +28,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const analyticsPromise = isSupported().then((ok) => (ok ? getAnalytics(app) : null)).catch(() => null);
 export const authReady = signInAnonymously(auth).catch((e) => {
-  console.error("Anonymous Firebase sign-in failed", e);
+  console.error("Anonymous account session failed", e);
   throw e;
 });
 
@@ -45,7 +45,7 @@ export const waitForUser = () => new Promise((resolve, reject) => {
     if (!done) {
       done = true;
       off();
-      reject(new Error("Firebase authentication timed out."));
+      reject(new Error("Account session timed out."));
     }
   }, 10000);
 });
@@ -58,13 +58,13 @@ export async function authHeader() {
 export async function getPushToken() {
   if (!(await messagingSupported())) throw new Error("Push notifications are not supported by this browser.");
   const vapid = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-  if (!vapid) throw new Error("VITE_FIREBASE_VAPID_KEY is missing. Add your Firebase Web Push certificate key.");
+  if (!vapid) throw new Error("VITE_FIREBASE_VAPID_KEY is missing. Add your Web Push certificate key.");
   if (!("Notification" in window)) throw new Error("This browser does not support notifications.");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notification permission was not granted.");
-  const registration = await navigator.serviceWorker.getRegistration("/firebase-messaging-sw.js") || await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+  const registration = await navigator.serviceWorker.getRegistration("/push-service-worker.js") || await navigator.serviceWorker.register("/push-service-worker.js");
   const token = await getToken(getMessaging(app), { vapidKey: vapid, serviceWorkerRegistration: registration });
-  if (!token) throw new Error("Firebase did not return a push token.");
+  if (!token) throw new Error("The push service did not return a registration token.");
   return token;
 }
 

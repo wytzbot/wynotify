@@ -1,10 +1,60 @@
-# WyNotify v4
+# WyNotify
 
-WyNotify is a Firebase Cloud Messaging notification workspace with real customer-device registration, server-side delivery, Flutterwave v4 OPay billing, plan enforcement and idempotent subscription activation.
+WyNotify is a simple customer notification platform for businesses, website owners and app owners. The main experience is designed for non-technical users: connect a site or app, grow an opted-in audience, send messages, and review delivery results.
 
-## Required Vercel environment variables
+Developers still get SDK/API integration tools under **Advanced tools**.
 
-### Firebase Web (public)
+## Why WyNotify
+
+- Simple business-first dashboard
+- One-click device test
+- Customer subscriber management
+- Ready-made notification templates
+- Audience tags and targeting support
+- Delivery reporting
+- Website/app developer integration
+- SDK examples and REST API
+- Secure payment flow
+- PWA/mobile-friendly interface
+
+## What changed in this update
+
+**Fixes**
+
+- The `send` action used to cap delivery at the first 500 matched subscribers and silently drop the rest — meaning Pro (25,000) and Business (100,000) plans never actually reached their full audience on a single broadcast. Sends are now batched in groups of 500 (Firebase Cloud Messaging's hard limit per call) so every matched subscriber is reached.
+- Pricing was re-checked against current USD→NGN market rates: Starter is now ₦4,500 (~$3), Pro ₦7,500 (~$5), Business ₦15,000 (~$10).
+
+**New features (to compete with Firebase directly)**
+
+- **Click-through tracking** (free, all plans) — every notification now records how many customers actually tapped it, shown next to sent/failed counts. Firebase Cloud Messaging alone gives you delivery counts but no click analytics without extra SDK work; this comes built in.
+- **Scheduled sending** (Pro and Business) — compose a message and pick a future date/time instead of sending immediately. A Vercel Cron job (`/api?action=processScheduled`, every 5 minutes) flushes due messages. Requires a new `CRON_SECRET` environment variable (see below) — Vercel sends it automatically as a bearer token once you set it.
+
+### New/updated environment variable
+
+- `CRON_SECRET` — a random string (16+ chars). Set it in Vercel's env vars; Vercel automatically sends it as `Authorization: Bearer $CRON_SECRET` when it invokes the cron job, and the API checks it against that header. Without it the cron endpoint still works but is unauthenticated — set it before going live.
+
+### Ideas for further differentiation from Firebase (not yet built)
+
+- A/B testing two message variants against a split audience
+- Recurring/automated sends (e.g. a weekly digest) rather than one-off scheduling
+- Team seats with per-user permissions on Business plan
+- Outbound webhooks so a store's own backend hears about opens/clicks
+
+## Basic workflow
+
+1. Create/open your WyNotify workspace.
+2. Use **Connect app** to test the current device or hand the integration details to your developer.
+3. Add the notification registration code to your website/app.
+4. Customers opt in to notifications.
+5. Send promotions, announcements, updates and alerts from **Send notification**.
+6. Review delivery results in the dashboard.
+
+## Vercel environment variables
+
+Set these in **Vercel → Project → Settings → Environment Variables**.
+
+### Public web configuration
+
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
 - `VITE_FIREBASE_PROJECT_ID`
@@ -13,127 +63,35 @@ WyNotify is a Firebase Cloud Messaging notification workspace with real customer
 - `VITE_FIREBASE_APP_ID`
 - `VITE_FIREBASE_MEASUREMENT_ID` — optional
 - `VITE_FIREBASE_VAPID_KEY`
+- `VITE_SUPPORT_EMAIL` — optional
 
-### App (public)
-- `VITE_SUPPORT_EMAIL` — optional support email shown by Contact Support.
+### Server-only secrets
 
-### Server-only
-- `FIREBASE_SERVICE_ACCOUNT_JSON` — complete Firebase Admin service-account JSON. Never prefix it with `VITE_`.
+- `FIREBASE_SERVICE_ACCOUNT_JSON` — complete service-account JSON. Never expose this to the browser.
 - `FLW_CLIENT_ID`
 - `FLW_CLIENT_SECRET`
 - `FLW_SECRET_HASH`
-- `FLW_SANDBOX` — `true` while testing, `false` in production.
-- `APP_URL` — deployed public URL used for payment redirects.
+- `FLW_SANDBOX` — `true` for testing, `false` for live payments
+- `APP_URL` — deployed public URL, for example `https://your-domain.vercel.app`
 
-The build generates `public/firebase-messaging-sw.js` from the Firebase Web variables, so Firebase client configuration is not hard-coded in the source tree.
+Never add server secrets with a `VITE_` prefix.
 
-## Firebase setup
+## Search and AI crawler support
 
-1. Enable Authentication → Sign-in method → Anonymous.
-2. Enable Firestore.
-3. Enable Cloud Messaging.
-4. Create a Web Push certificate/VAPID key and add it to Vercel as `VITE_FIREBASE_VAPID_KEY`.
-5. Keep the included Firestore rules locked down. Browser database access is intentionally disabled; the Vercel API uses Firebase Admin.
-6. Deploy the required Firestore composite index (`notifications`: `workspaceId` ascending + `createdAt` descending, used by the dashboard's recent-notifications query) with `firebase deploy --only firestore:indexes`, or open the dashboard once after deploying and follow the index-creation link Firestore prints in the function logs.
+The production build includes `robots.txt`, a sitemap, and `llms.txt`. Public marketing information can be discovered by search engines and AI crawlers while API routes remain disallowed from crawling.
 
-## Customer notification architecture
+## Integration
 
-Each owner gets a workspace with a random public registration key. Customers do **not** create WyNotify accounts.
+The dashboard provides a public workspace registration key and a registration endpoint for developer integrations. The key can register opted-in customer devices but cannot send notifications or access the owner's dashboard.
 
-The owner dashboard returns:
-- `registration.workspaceKey`
-- `registration.endpoint`
+Only send notifications to people who have legitimately opted in.
 
-A customer-facing web app obtains its own FCM token and calls:
+## Deployment
 
-```js
-fetch('/api?action=registerDevice', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({
-    workspaceKey: 'YOUR_PUBLIC_WORKSPACE_KEY',
-    token: 'CUSTOMER_FCM_TOKEN',
-    subscriberType: 'customers',
-    tags: ['new-users']
-  })
-});
+Install dependencies and run:
+
+```bash
+npm run build
 ```
 
-The device is stored against the owner's workspace, not against the customer's anonymous Firebase UID.
-
-For the owner dashboard's own browser, `registerDevice` can also be called with the authenticated Firebase token; the API automatically resolves the owner's workspace.
-
-## Notification flow
-
-1. Owner or customer app requests notification permission.
-2. Firebase Cloud Messaging creates a registration token.
-3. The token is registered against a workspace.
-4. Owner calls the authenticated `send` endpoint.
-5. The server loads active workspace devices and sends through Firebase Admin Messaging.
-6. Invalid FCM tokens are automatically deactivated.
-7. Delivery counts are stored in Firestore and shown in the dashboard.
-
-FCM multicast is capped at 500 tokens per send in this version. The UI reports the number matched, sent and failed. For very large broadcasts, add a queue/worker before enabling bulk fan-out beyond 500 tokens.
-
-## API
-
-- `GET /api?action=health`
-- `GET /api?action=dashboard` — authenticated workspace data and customer registration details.
-- `POST /api?action=registerDevice` — public customer registration using `workspaceKey`, or authenticated owner registration.
-- `POST /api?action=send` — authenticated notification delivery.
-- `POST /api?action=opay` — authenticated Flutterwave v4 OPay checkout creation.
-- `GET /api?action=verifyPayment&reference=...` — authenticated server-side payment verification.
-- `POST /api?action=webhook` — Flutterwave webhook endpoint.
-
-## Billing and security
-
-The server determines the price from the selected plan. The browser cannot change a plan's amount or currency.
-
-Subscription activation is transactionally idempotent: the same successful payment reference can never grant another month when the redirect verification and webhook arrive more than once.
-
-Webhook HMAC verification uses the raw request body. Flutterwave charge details are verified server-side before a subscription is activated.
-
-Plan subscriber limits are enforced server-side:
-
-| Plan | Active subscriber limit | Analytics window |
-|---|---:|---:|
-| Free | 1,000 | 7 days |
-| Starter | 5,000 | 30 days |
-| Pro | 25,000 | 90 days |
-| Business | 100,000 | 365 days |
-
-## Data screens
-
-- Export Data downloads the currently loaded workspace data.
-- Backup downloads a portable metadata snapshot without device tokens or secrets.
-- Backup validation checks the file structure before any server-side restore process.
-- Search filters loaded notification history and takes the user to Notifications.
-
-There are no fake scheduled jobs, automations, open-rate metrics or Google Drive integrations in this build. Those require a real worker/event pipeline and are deliberately not presented as working controls.
-
-## Environment variables
-
-Set these in Vercel → Project → Settings → Environment Variables. Public Firebase `VITE_*` values are safe to expose to the browser; Firebase Admin and Flutterwave secrets are server-only.
-
-### Firebase Web (public)
-- `VITE_FIREBASE_API_KEY`
-- `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
-- `VITE_FIREBASE_MEASUREMENT_ID` (optional)
-- `VITE_FIREBASE_VAPID_KEY`
-
-### App (public)
-- `VITE_SUPPORT_EMAIL`
-
-### Server-only
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
-- `FLW_CLIENT_ID`
-- `FLW_CLIENT_SECRET`
-- `FLW_SECRET_HASH`
-- `FLW_SANDBOX` (`true` for testing, `false` for production)
-- `APP_URL`
-
-The build generates `public/firebase-messaging-sw.js` from the Firebase Web variables so the service worker never contains a hard-coded project configuration.
+The build generates the push service worker from the configured public web variables.
