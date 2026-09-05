@@ -87,7 +87,7 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-const CACHE = "wynotify-v5";
+const CACHE = "wynotify-${Date.now()}";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE)
